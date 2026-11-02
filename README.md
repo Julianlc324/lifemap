@@ -6,8 +6,8 @@ Proyecto integrador del curso **Big Data** · Institución Universitaria de Envi
 |---|---|
 | **Equipo** | Julián ([@Julianlc324](https://github.com/Julianlc324)) · Andrés |
 | **Área y familia** | Philadelphia · Restaurants (configurable en `config/lifemap.env`) |
-| **URL pública** | `https://<SU-DOMINIO>.ngrok-free.app` ← *reemplazar al desplegar* |
-| **Estado** | `https://<SU-DOMINIO>.ngrok-free.app/health` |
+| **URL pública** | `http://lifemap-iue.mexicocentral.cloudapp.azure.com` |
+| **Estado** | `http://lifemap-iue.mexicocentral.cloudapp.azure.com/health` |
 | **Dataset** | [Yelp Open Dataset](https://www.kaggle.com/datasets/yelp-dataset/yelp-dataset) (Kaggle). Fuente: Yelp Inc.; se respetan sus términos de uso. |
 
 Una agencia de desarrollo económico quiere saber cuánto viven los negocios, qué dice su reputación y en qué zonas se concentra el riesgo de cierre, consultable por ubicación y actualizado a medida que llegan reseñas.
@@ -56,7 +56,7 @@ GitHub (merge a main) ─► Jenkins (pollSCM 2 min) ─► build ─► pytest 
    GIT_COMMIT=$(git rev-parse HEAD) docker compose --profile tunnel up -d --build
    ```
    La primera vez `ingest` descarga el dataset (~4 GB) y `batch` entrena los modelos; según el equipo tarda entre 40 y 120 minutos. Avance: `docker compose logs -f ingest batch`.
-4. **Verificar**: `docker compose ps` (todo `healthy`; `ingest`, `batch` y `kafka-init` terminan con `Exited (0)`) y abrir `https://<SU-DOMINIO>.ngrok-free.app/health`.
+4. **Verificar**: `docker compose ps` (todo `healthy`; `ingest`, `batch` y `kafka-init` terminan con `Exited (0)`) y abrir `http://lifemap-iue.mexicocentral.cloudapp.azure.com/health`.
 5. **Jenkins**: `http://<ip-del-servidor>:8081` (usuario `admin`, clave de `.env`). El job `lifemap` ya existe (JCasC) y revisa `main` cada 2 minutos. Desde ese momento **todo despliegue lo hace Jenkins**.
 
 > **pollSCM documentado:** el servidor está detrás de ngrok y solo la API se publica, así que GitHub no alcanza a Jenkins con un webhook. Según la sección 6 de la guía se usa pollSCM cada 2 minutos (`H/2 * * * *`, variable `POLL_SCM_SPEC`). Si Jenkins fuera alcanzable, el trigger `githubPush()` ya está configurado: basta agregar el webhook `http://<host>:8081/github-webhook/`.
@@ -93,7 +93,7 @@ Configuración no secreta: `config/lifemap.env` (área, familia, T, umbrales). S
 
 Ejemplos (centro de Philadelphia):
 ```bash
-URL=https://<SU-DOMINIO>.ngrok-free.app
+URL=http://lifemap-iue.mexicocentral.cloudapp.azure.com
 curl "$URL/businesses/near?lat=39.9526&lon=-75.1652&radius=800&category=Pizza"
 curl "$URL/zones/summary?lat=39.9526&lon=-75.1652&radius=2000"
 curl "$URL/stats/closure?by=category&min_days=18250&limit=10"
