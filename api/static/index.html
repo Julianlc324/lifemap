@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LifeMap</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#f6f5f1; --ink:#1d2321; --muted:#5d6763; --line:#d9d6cc; --ok:#2f7d4f; --bad:#b3452c; --warn:#b07a12; --card:#fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141716; --ink:#e8ebe9; --muted:#9aa5a0; --line:#2c3230; --card:#1c201f; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:20px 16px 8px; max-width:1100px; margin:auto; }
+  h1 { margin:0; font-size:22px; } .sub { color:var(--muted); }
+  main { max-width:1100px; margin:auto; padding:8px 16px 32px; display:grid; gap:16px; grid-template-columns: 2fr 1fr; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  #map { height:520px; border-radius:10px; border:1px solid var(--line); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .svc { display:flex; justify-content:space-between; border-bottom:1px solid var(--line); padding:4px 0; }
+  .ok { color:var(--ok); } .down { color:var(--bad); } .degraded { color:var(--warn); }
+  code { font-size:13px; } ul { padding-left:18px; margin:6px 0; } a { color:inherit; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LifeMap</h1>
+  <div class="sub" id="scope">Reputación, ubicación y supervivencia de negocios · Yelp Open Dataset</div>
+</header>
+<main>
+  <div>
+    <div id="map"></div>
+    <div class="sub">Rojo: alertas activas de riesgo de cierre · Naranja: celdas hotspot en la última ventana</div>
+  </div>
+  <div style="display:grid; gap:16px; align-content:start">
+    <div class="card"><b>Estado</b><div id="health">Cargando…</div></div>
+    <div class="card"><b>Endpoints</b>
+      <ul>
+        <li><a href="/health">/health</a></li>
+        <li><code>/businesses/near?lat&amp;lon&amp;radius&amp;category</code></li>
+        <li><code>/businesses/within?polygon=GeoJSON</code></li>
+        <li><code>/zones/summary?lat&amp;lon&amp;radius&amp;min_days</code></li>
+        <li><a href="/stats/closure?by=category">/stats/closure?by=category|cell&amp;min_days</a></li>
+        <li><code>POST /predict {"text": "..."}</code></li>
+        <li><code>/live/hotspots?lat&amp;lon&amp;radius&amp;window</code></li>
+        <li><code>/alerts?lat&amp;lon&amp;radius</code> o <code>?polygon</code></li>
+        <li><a href="/survival">/survival</a> · <code>/survival/&lt;categoria&gt;</code></li>
+        <li><code>/risk/near?lat&amp;lon&amp;radius</code></li>
+        <li><a href="/reports/markdown">/reports/markdown</a></li>
+      </ul>
+    </div>
+  </div>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(async () => {
+  const cfg = await fetch('/config').then(r => r.json());
+  document.getElementById('scope').textContent =
+    `${cfg.metro} · ${cfg.category_family} · commit ${String(cfg.commit).slice(0, 8)}`;
+  const map = L.map('map').setView(cfg.center, 11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { attribution: '&copy; OpenStreetMap' }).addTo(map);
+  const [lat, lon] = cfg.center;
+  const q = `lat=${lat}&lon=${lon}&radius=60000`;
+  try {
+    const hs = await fetch(`/live/hotspots?${q}`).then(r => r.json());
+    (hs.items || []).forEach(w => L.geoJSON(w.geometry, { style: { color: '#d9822b', weight: 1, fillOpacity: .35 } })
+      .bindPopup(`${w.geohash}: ${w.pct_negative}% negativas (antes ${w.prev_pct_negative ?? '–'}%)`).addTo(map));
+    const al = await fetch(`/alerts?${q}&limit=500`).then(r => r.json());
+    (al.items || []).forEach(a => L.circleMarker([a.location.coordinates[1], a.location.coordinates[0]],
+      { radius: 5, color: '#b3452c' }).bindPopup(`${a.name}<br>riesgo ${(a.probability * 100).toFixed(1)}%`).addTo(map));
+  } catch (e) { console.warn(e); }
+  const h = await fetch('/health').then(r => r.json());
+  document.getElementById('health').innerHTML =
+    Object.entries(h.services).map(([k, v]) => `<div class="svc"><span>${k}</span><span class="${v.status}">${v.status}</span></div>`).join('')
+    + `<div class="sub">commit ${h.commit}</div>`;
+})();
+</script>
+</body>
+</html>
