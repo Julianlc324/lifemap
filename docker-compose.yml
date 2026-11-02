@@ -1,0 +1,260 @@
+# LifeMap - un solo Compose para las Entregas 1 y 2.
+# Levantar todo:   docker compose up -d --build
+# Los servicios se comunican por los nombres de esta red (mongo, spark-master, kafka, ...).
+name: lifemap
+
+x-spark-image: &spark-image
+  image: lifemap-spark:latest
+  build:
+    context: .
+    dockerfile: docker/spark/Dockerfile
+    args:
+      GIT_COMMIT: ${GIT_COMMIT:-dev}
+  env_file: [config/lifemap.env]
+
+x-dask-image: &dask-image
+  image: lifemap-dask:latest
+  build:
+    context: .
+    dockerfile: docker/dask/Dockerfile
+  env_file: [config/lifemap.env]
+
+x-py-health: &py-health
+  interval: 15s
+  timeout: 5s
+  retries: 10
+  start_period: 30s
+
+services:
+  # ---------------------------------------------------------------- MongoDB
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    command: ["--wiredTigerCacheSizeGB", "2"]
+    volumes: [mongo_data:/data/db]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      <<: *py-health
+
+  # ---------------------------------------------------------------- Spark
+  spark-master:
+    <<: *spark-image
+    restart: unless-stopped
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master",
+              "--host", "spark-master", "--port", "7077", "--webui-port", "8080"]
+    ports: ["8090:8080"]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/json/"]
+      <<: *py-health
+
+  spark-worker-1: &spark-worker
+    <<: *spark-image
+    restart: unless-stopped
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker",
+              "spark://spark-master:7077", "--webui-port", "8081"]
+    environment:
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-3}
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-3g}
+    volumes: [data:/data, models:/models, checkpoints:/checkpoints]
+    depends_on:
+      spark-master: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8081/json/"]
+      <<: *py-health
+
+  spark-worker-2:
+    <<: *spark-worker
+
+  # ---------------------------------------------------------------- Dask
+  dask-scheduler:
+    <<: *dask-image
+    restart: unless-stopped
+    command: ["dask", "scheduler", "--port", "8786", "--dashboard-address", ":8787"]
+    ports: ["8787:8787"]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8787/health"]
+      <<: *py-health
+
+  dask-worker-1: &dask-worker
+    <<: *dask-image
+    restart: unless-stopped
+    command: ["dask", "worker", "tcp://dask-scheduler:8786", "--nworkers", "1",
+              "--nthreads", "2", "--memory-limit", "${DASK_WORKER_MEMORY:-2.5GB}"]
+    volumes: [data:/data]
+    depends_on:
+      dask-scheduler: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('dask-scheduler', 8786), 3)"]
+      <<: *py-health
+
+  dask-worker-2:
+    <<: *dask-worker
+
+  # ---------------------------------------------------------------- Kafka (Entrega 2, KRaft)
+  kafka:
+    image: apache/kafka:3.8.1
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx1g"
+    volumes: [kafka_data:/var/lib/kafka/data]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      <<: *py-health
+
+  kafka-init:
+    image: apache/kafka:3.8.1
+    restart: "no"
+    depends_on:
+      kafka: {condition: service_healthy}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists
+        --topic reviews --partitions 3 --replication-factor 1 &&
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic reviews
+
+  # ---------------------------------------------------------------- Pipeline batch (one-shot)
+  # Se ejecutan al hacer `docker compose up` y terminan con código 0. Cada paso registra su
+  # estado en la colección meta y no se repite salvo FORCE_STEPS (por ejemplo, "sentiment,closure").
+  ingest:
+    <<: *dask-image
+    restart: "no"
+    command: ["python", "-m", "ingest.ingest"]
+    environment:
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
+      FORCE_STEPS: ${FORCE_STEPS:-}
+    volumes: [data:/data]
+    depends_on:
+      mongo: {condition: service_healthy}
+      dask-worker-1: {condition: service_started}
+      dask-worker-2: {condition: service_started}
+
+  batch:
+    <<: *spark-image
+    restart: "no"
+    command: ["bin/pipeline.sh"]
+    environment:
+      FORCE_STEPS: ${FORCE_STEPS:-}
+    volumes: [data:/data, models:/models]
+    depends_on:
+      ingest: {condition: service_completed_successfully}
+      spark-worker-1: {condition: service_started}
+      spark-worker-2: {condition: service_started}
+
+  # ---------------------------------------------------------------- API Flask
+  api: &api
+    <<: *spark-image
+    restart: unless-stopped
+    command: ["gunicorn", "-w", "1", "--threads", "8", "--timeout", "180",
+              "-b", "0.0.0.0:5000", "api.app:app"]
+    ports: ["${API_PORT:-5000}:5000"]
+    volumes: [models:/models]
+    depends_on:
+      mongo: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:5000/ping"]
+      <<: *py-health
+
+  # ---------------------------------------------------------------- Streaming (Entrega 2)
+  streaming:
+    <<: *spark-image
+    restart: unless-stopped
+    command: ["bin/spark-run.sh", "streaming/stream_job.py"]
+    volumes: [data:/data, models:/models, checkpoints:/checkpoints]
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
+      mongo: {condition: service_healthy}
+      spark-worker-1: {condition: service_started}
+
+  # ---------------------------------------------------------------- Jenkins (CI/CD)
+  jenkins:
+    image: lifemap-jenkins:latest
+    build:
+      context: .
+      dockerfile: docker/jenkins/Dockerfile
+    restart: unless-stopped
+    user: root
+    ports: ["${JENKINS_PORT:-8081}:8080"]
+    environment:
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-cambiar-esta-clave}
+      JENKINS_URL: ${JENKINS_URL:-http://localhost:8081/}
+      REPO_URL: ${REPO_URL:-https://github.com/Julianlc324/lifemap.git}
+      GITHUB_USER: ${GITHUB_USER:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
+      POLL_SCM_SPEC: ${POLL_SCM_SPEC:-H/2 * * * *}
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+
+  # ---------------------------------------------------------------- Servicios bajo demanda
+  # Productor acelerado:  docker compose run --rm producer --days-per-tick 30 --tick-seconds 10
+  producer:
+    <<: *spark-image
+    profiles: ["tools"]
+    entrypoint: ["python3", "-m", "streaming.producer"]
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
+
+  # Jobs sueltos:  docker compose run --rm jobs bin/spark-run.sh jobs/closure_rates.py
+  jobs:
+    <<: *spark-image
+    profiles: ["tools"]
+    command: ["bin/pipeline.sh"]
+    volumes: [data:/data, models:/models]
+
+  # API candidata: Jenkins la prueba antes de reemplazar la API pública
+  api-test:
+    <<: *api
+    profiles: ["test"]
+    ports: []
+    restart: "no"
+
+  tests:
+    <<: *spark-image
+    profiles: ["test"]
+    entrypoint: ["python3", "-m", "pytest"]
+    command: ["-q", "tests/unit"]
+    environment:
+      API_URL: http://api-test:5000
+    volumes: [models:/models]
+
+  # Túnel público para un equipo de laboratorio (opción B del README)
+  ngrok:
+    image: ngrok/ngrok:3
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: ["http", "--url=${NGROK_DOMAIN:-}", "api:5000"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    depends_on:
+      api: {condition: service_healthy}
+
+volumes:
+  mongo_data:
+  data:
+  models:
+  checkpoints:
+  kafka_data:
+  jenkins_home:
