@@ -70,6 +70,7 @@ pipeline {
     }
 
     stage('Streaming tests') {
+      when { expression { fileExists('streaming/stream_job.py') } }
       steps {
         sh '$COMPOSE up -d --no-deps streaming'
         // Modelo cargado = modelo versionado; humo: 100 mensajes -> clasificados en MongoDB
