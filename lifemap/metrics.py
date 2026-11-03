@@ -12,7 +12,7 @@ def closure_rate(closures, business_days):
         raise ValueError("cierres y días-negocio deben ser no negativos")
     if business_days == 0:
         return None
-    return closures / business_days * 100.0
+    return closures / (business_days / 365.0) * 100.0
 
 
 def sentiment_label(stars):
