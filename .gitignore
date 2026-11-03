@@ -1,0 +1,13 @@
+.env
+*.pyc
+__pycache__/
+.pytest_cache/
+data/
+models/
+checkpoints/
+*.zip
+kaggle.json
+.ipynb_checkpoints/
+spark-warehouse/
+metastore_db/
+derby.log
