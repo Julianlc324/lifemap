@@ -1,0 +1,74 @@
+# Jenkins Configuration as Code. Los valores ${...} los toma JCasC de las variables de
+# entorno del contenedor (definidas en el .env del servidor, que NO se sube al repositorio).
+jenkins:
+  systemMessage: "LifeMap CI/CD - despliegue automático de main"
+  numExecutors: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+  crumbIssuer:
+    standard:
+      excludeClientIPFromCrumb: true
+
+unclassified:
+  location:
+    url: "${JENKINS_URL:-http://localhost:8081/}"
+
+security:
+  globalJobDslSecurityConfiguration:
+    useScriptSecurity: false
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          # Token de Kaggle: vive como credencial de Jenkins, nunca en el repositorio
+          - usernamePassword:
+              scope: GLOBAL
+              id: "kaggle"
+              description: "Kaggle API (usuario + key)"
+              username: "${KAGGLE_USERNAME}"
+              password: "${KAGGLE_KEY}"
+          # Token de GitHub (solo lectura) para clonar el repositorio
+          - usernamePassword:
+              scope: GLOBAL
+              id: "github"
+              description: "GitHub token"
+              username: "${GITHUB_USER}"
+              password: "${GITHUB_TOKEN}"
+
+jobs:
+  - script: >
+      pipelineJob('lifemap') {
+        description('Build, pruebas y despliegue de LifeMap desde main')
+        properties {
+          pipelineTriggers {
+            triggers {
+              githubPush()
+              pollSCM { scmpoll_spec('${POLL_SCM_SPEC:-H/2 * * * *}') }
+            }
+          }
+          disableConcurrentBuilds()
+        }
+        definition {
+          cpsScm {
+            lightweight(true)
+            scriptPath('Jenkinsfile')
+            scm {
+              git {
+                remote {
+                  url('${REPO_URL}')
+                  credentials('github')
+                }
+                branch('*/main')
+              }
+            }
+          }
+        }
+      }
