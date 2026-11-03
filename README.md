@@ -22,8 +22,8 @@ Kaggle API ─► Dask (scheduler + 2 workers) ─► MongoDB (GeoJSON + 2dspher
 Productor acelerado ─► Kafka (KRaft, topic reviews x3) ─► Spark Structured Streaming
                                                     │             │  inferencia, ventanas 30 d + watermark 7 d,
                                                     │             └► alertas con foreachBatch
-                                               API Flask ─► ngrok (URL pública) ─► Power BI
-GitHub (merge a main) ─► Jenkins (pollSCM 2 min) ─► build ─► pytest ─► API candidata ─► humo streaming ─► despliegue
+                                               API Flask (puerto 80) ─► URL pública ─► Power BI
+GitHub (merge a main) ─► Jenkins (pollSCM 2 min) ─► build ─► pytest ─► API candidata ─► humo streaming (E2) ─► despliegue
 ```
 
 | Servicio (Compose) | Rol |
@@ -33,35 +33,42 @@ GitHub (merge a main) ─► Jenkins (pollSCM 2 min) ─► build ─► pytest 
 | `dask-scheduler`, `dask-worker-1/2` | Ingesta y limpieza particionada |
 | `kafka` (+ `kafka-init`) | Broker KRaft, topic `reviews` con 3 particiones |
 | `ingest`, `batch` | Pipeline de una sola ejecución (cada paso deja marca en `meta` y no se repite) |
-| `api` | Flask + gunicorn en el puerto 5000 |
-| `streaming` | Job de Structured Streaming (espera a que existan los modelos) |
+| `api` | Flask + gunicorn, publicado en el puerto 80 |
+| `streaming` | Job de Structured Streaming (Entrega 2; mientras su código no exista, espera sin reiniciarse) |
 | `jenkins` | CI/CD con Configuration as Code; usa el socket de Docker del servidor |
-| `ngrok` (perfil `tunnel`) | Publica la API con un dominio fijo |
+| `ngrok` (perfil `tunnel`, opcional) | Alternativa para publicar la API desde un equipo sin IP pública |
 
 ## Despliegue desde cero (solo con este README)
 
-**Servidor:** un equipo distinto al portátil de desarrollo (laboratorio o casa), con Docker Engine / Docker Desktop (Compose v2), **16 GB de RAM**, 4+ núcleos y 40 GB libres. Debe quedar encendido y sin suspensión.
+**Servidor actual:** VM de Azure for Students en Mexico Central, tamaño Standard B4s v2 (4 vCPU, 16 GiB), Ubuntu 24.04, disco SSD estándar de 64 GiB, IP estática con nombre DNS `lifemap-iue.mexicocentral.cloudapp.azure.com`. Puertos de entrada abiertos: 22 (SSH), 80 (API) y 8081 (Jenkins). Cualquier servidor Linux con Docker, 16 GB de RAM, 4 núcleos y 40 GB libres sirve igual.
 
 1. **Cuentas** (una sola vez):
-   - Kaggle → *Settings → API → Create New Token* (usuario + key).
-   - ngrok → *Your Authtoken* y *Domains → Create Domain* (dominio estático gratuito).
-   - GitHub → token *fine-grained* con permiso de lectura de *Contents* sobre este repo.
-2. **Clonar y configurar secretos** (fuera del repositorio):
+   - Kaggle → *Settings → API → Legacy API Credentials → Create Legacy API Key* (`kaggle.json` con usuario y key) y aceptar los términos del dataset.
+   - GitHub → token *fine-grained* de solo lectura (repositorios públicos), para que Jenkins clone el repo.
+2. **Docker en el servidor** (Ubuntu):
+   ```bash
+   curl -fsSL https://get.docker.com | sudo sh
+   sudo usermod -aG docker $USER   # salir y volver a entrar
+   ```
+3. **Clonar y configurar secretos** (fuera del repositorio):
    ```bash
    git clone https://github.com/Julianlc324/lifemap.git && cd lifemap
-   cp .env.example .env      # completar KAGGLE_*, GITHUB_TOKEN, JENKINS_ADMIN_PASSWORD, NGROK_*
+   cp .env.example .env      # completar KAGGLE_USERNAME, KAGGLE_KEY, GITHUB_TOKEN, JENKINS_ADMIN_PASSWORD, JENKINS_URL
+   chmod 600 .env
    ```
-3. **Levantar todo**:
+4. **Levantar todo**:
    ```bash
-   GIT_COMMIT=$(git rev-parse HEAD) docker compose --profile tunnel up -d --build
+   GIT_COMMIT=$(git rev-parse HEAD) docker compose up -d --build
    ```
-   La primera vez `ingest` descarga el dataset (~4 GB) y `batch` entrena los modelos; según el equipo tarda entre 40 y 120 minutos. Avance: `docker compose logs -f ingest batch`.
-4. **Verificar**: `docker compose ps` (todo `healthy`; `ingest`, `batch` y `kafka-init` terminan con `Exited (0)`) y abrir `http://lifemap-iue.mexicocentral.cloudapp.azure.com/health`.
-5. **Jenkins**: `http://<ip-del-servidor>:8081` (usuario `admin`, clave de `.env`). El job `lifemap` ya existe (JCasC) y revisa `main` cada 2 minutos. Desde ese momento **todo despliegue lo hace Jenkins**.
+   La primera vez `ingest` descarga el dataset (2,07 GB comprimido) y `batch` entrena los modelos: en la VM actual tomó unos 40 minutos en total. Avance: `docker compose logs -f ingest batch`.
+5. **Verificar**: `docker compose ps` (servicios `healthy`; `ingest`, `batch` y `kafka-init` terminan con `Exited (0)`) y abrir `http://<servidor>/health`.
+6. **Jenkins**: `http://<servidor>:8081` (usuario `admin`, clave del `.env`). El job `lifemap` ya existe (JCasC) y revisa `main` cada 2 minutos. La primera vez se lanza a mano (*Construir ahora*) para que Jenkins tenga una referencia; desde ahí **todo despliegue lo hace Jenkins** al detectar un merge.
 
-> **pollSCM documentado:** el servidor está detrás de ngrok y solo la API se publica, así que GitHub no alcanza a Jenkins con un webhook. Según la sección 6 de la guía se usa pollSCM cada 2 minutos (`H/2 * * * *`, variable `POLL_SCM_SPEC`). Si Jenkins fuera alcanzable, el trigger `githubPush()` ya está configurado: basta agregar el webhook `http://<host>:8081/github-webhook/`.
+> **pollSCM documentado:** se usa pollSCM cada 2 minutos (`H/2 * * * *`, variable `POLL_SCM_SPEC`), aceptado por la sección 6 de la guía, para no depender de que GitHub alcance el puerto de Jenkins. El trigger `githubPush()` también está configurado: basta agregar el webhook `http://<servidor>:8081/github-webhook/` en GitHub.
 
-Configuración no secreta: `config/lifemap.env` (área, familia, T, umbrales). Secretos: solo en `.env` del servidor y en la credencial `kaggle` de Jenkins (creada por JCasC desde el entorno). Nunca se suben al repositorio.
+**Encender y apagar la VM (ahorro de crédito):** portal de Azure → Máquinas virtuales → `lifemap-server` → *Iniciar* / *Detener* (sin forzar). Al encender, Docker levanta los servicios solo y la URL responde en 2 a 3 minutos; datos y modelos se conservan en los volúmenes.
+
+Configuración no secreta: `config/lifemap.env` (área, familia, T, umbrales). Secretos: solo en el `.env` del servidor y en la credencial `kaggle` de Jenkins (creada por JCasC desde el entorno). Nunca se suben al repositorio.
 
 ## Pipeline de Jenkins
 
