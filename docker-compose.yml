@@ -173,7 +173,7 @@ services:
   streaming:
     <<: *spark-image
     restart: unless-stopped
-    command: ["bin/spark-run.sh", "streaming/stream_job.py"]
+    command: ["sh", "-c", "if [ -f streaming/stream_job.py ]; then exec bin/spark-run.sh streaming/stream_job.py; else echo Streaming disponible en la Entrega 2; exec sleep infinity; fi"]
     volumes: [data:/data, models:/models, checkpoints:/checkpoints]
     depends_on:
       kafka-init: {condition: service_completed_successfully}

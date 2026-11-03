@@ -1,5 +1,6 @@
 """Ejecuta un paso del pipeline batch si no está hecho (o si está en FORCE_STEPS)."""
 import importlib
+import importlib.util
 import sys
 import time
 
@@ -20,6 +21,9 @@ ALWAYS = {"report"}
 def main(name):
     if name not in STEPS:
         raise SystemExit(f"Paso desconocido: {name}. Opciones: {', '.join(STEPS)}")
+    if importlib.util.find_spec(STEPS[name]) is None:
+        print(f"[{name}] {STEPS[name]} aún no está en el repositorio (Entrega 2); se omite")
+        return
     steps.wait_for_mongo()
     if name not in ALWAYS and not steps.should_run(name):
         return
