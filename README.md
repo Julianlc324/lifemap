@@ -4,7 +4,7 @@ Proyecto integrador del curso **Big Data** · Institución Universitaria de Envi
 
 | | |
 |---|---|
-| **Equipo** | Julián ([@Julianlc324](https://github.com/Julianlc324)) · Andrés |
+| **Equipo** | Julián ([@Julianlc324](https://github.com/Julianlc324)) · Andrés ([@Bjonion](https://github.com/Bjonion)) |
 | **Área y familia** | Philadelphia · Restaurants (configurable en `config/lifemap.env`) |
 | **URL pública** | `http://lifemap-iue.mexicocentral.cloudapp.azure.com` |
 | **Estado** | `http://lifemap-iue.mexicocentral.cloudapp.azure.com/health` |
