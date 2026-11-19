@@ -16,6 +16,7 @@ from pyspark.ml.feature import IDF, HashingTF, RegexTokenizer, SQLTransformer, S
 from pyspark.sql import functions as F
 
 from lifemap import config, db, models
+from lifemap.metrics import cutoff_exclusive
 from lifemap.spark import get_spark, read_mongo, write_mongo
 
 NEGATIONS = {"no", "not", "nor", "against", "don", "didn", "doesn", "isn", "wasn", "weren",
@@ -65,9 +66,9 @@ def evaluate(pred, name):
 
 def run():
     spark = get_spark("lifemap-sentiment-train", shuffle_partitions=128)
-    t_end = datetime.combine(config.CUTOFF_T, dtime(23, 59, 59)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    t_end = cutoff_exclusive(config.CUTOFF_T).strftime("%Y-%m-%dT%H:%M:%SZ")
     reviews = read_mongo(spark, "reviews", [
-        {"$match": {"date": {"$lte": {"$date": t_end}}}},
+        {"$match": {"date": {"$lt": {"$date": t_end}}}},
         {"$project": {"_id": 1, "business_id": 1, "text": 1, "stars": 1, "date": 1}},
     ])
     data = (reviews

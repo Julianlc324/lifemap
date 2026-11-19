@@ -1,7 +1,7 @@
 """Balanceo de carga (E1.8).
 
-1. Tiempos: la operación MapReduce del % de reseñas negativas por celda y por categoría (sobre
-   todas las reseñas del área) con 2, 8, 32 y 200 particiones, 3 repeticiones cada una,
+1. Tiempos: la operación MapReduce de cierres y días-negocio por celda y por categoría (sobre
+   todos los negocios del área) con 2, 8, 32 y 200 particiones, 3 repeticiones cada una,
    repartiendo sin clave (round-robin) y con clave (categoría principal).
 2. Sesgo: filas por partición con spark_partition_id(), sin clave vs con clave (ciudad, categoría).
 La entrada se cachea antes de medir para que el tiempo sea de cómputo y shuffle, no de lectura.
@@ -24,10 +24,8 @@ def mapreduce(df, n, key=None):
     """Operación medida: reparto + map + reduceByKey + collect."""
     parted = df.repartition(n, key) if key else df.repartition(n)
     rdd = parted.rdd
-    # Nivel reseña: (clave, (negativa, 1)) por celda y por categoría. La versión por negocio
-    # (cierre, días) tiene muy pocas filas para que el número de particiones se note en el tiempo.
-    out = (rdd.flatMap(lambda r: [(("cell", r["geohash"]), (1 if r["stars"] <= 2 else 0, 1)),
-                                  (("category", r["main_category"]), (1 if r["stars"] <= 2 else 0, 1))])
+    from jobs.closure_rates import map_business
+    out = (rdd.flatMap(map_business)
            .reduceByKey(lambda a, b: (a[0] + b[0], a[1] + b[1]), numPartitions=n))
     return len(out.collect())
 
@@ -52,14 +50,10 @@ def run():
     spark.conf.set("spark.sql.adaptive.enabled", "false")  # AQE fusionaría particiones
 
     biz = spark.read.parquet(f"{config.DATA_DIR}/clean/business.parquet").select("business_id", "city")
-    reviews = spark.read.parquet(f"{config.DATA_DIR}/clean/reviews").select("business_id", "stars")
     life = (spark.read.format("mongodb").option("collection", "businesses").load()
             .select(F.col("_id").alias("business_id"), "main_category", "geohash", "event", "business_days")
             .filter(F.col("business_days").isNotNull()))
-    # Una fila por reseña con los atributos de su negocio: es la carga que se reparte
-    data = (reviews.join(life.join(biz, "business_id"), "business_id")
-            .select("business_id", "city", "main_category", "geohash", "event", "business_days", "stars")
-            .cache())
+    data = life.join(biz, "business_id").cache()
     n_rows = data.count()
     print("Filas de entrada:", n_rows)
 

@@ -25,6 +25,7 @@ COPY lifemap ./lifemap
 COPY jobs ./jobs
 COPY streaming ./streaming
 COPY api ./api
+COPY config ./config
 COPY tests ./tests
 COPY bin ./bin
 COPY pytest.ini ./
