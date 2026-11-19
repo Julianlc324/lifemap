@@ -160,6 +160,7 @@ services:
     command: ["bin/pipeline.sh"]
     environment:
       <<: *runtime
+      SPARK_EXECUTOR_MEMORY: ${SPARK_EXECUTOR_MEMORY:-1g}
       FORCE_STEPS: ${FORCE_STEPS:-}
     volumes: [data:/data, models:/models]
     depends_on:

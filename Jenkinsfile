@@ -77,7 +77,7 @@ pipeline {
                                           passwordVariable: 'KAGGLE_KEY')]) {
           sh '$COMPOSE run --rm --no-deps -T -e KAGGLE_USERNAME -e KAGGLE_KEY -e FORCE_STEPS="$FORCE_STEPS" ingest'
         }
-        sh '$COMPOSE run --rm --no-deps -T -e FORCE_STEPS="$FORCE_STEPS" batch'
+        sh '$COMPOSE run --rm --no-deps -T -e FORCE_STEPS="$FORCE_STEPS" -e SPARK_EXECUTOR_MEMORY=1g batch'
       }
     }
 
