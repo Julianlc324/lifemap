@@ -9,6 +9,8 @@ pipeline {
     timeout(time: 8, unit: 'HOURS')   // la primera corrida descarga y procesa el dataset completo
   }
   parameters {
+    booleanParam(name: 'VALIDATE_ONLY', defaultValue: false,
+                 description: 'Valida candidato aislado sin promover API ni streaming')
     string(name: 'FORCE_STEPS', defaultValue: 'survival,risk,balance',
            description: 'Pasos a repetir: ingest,life,sentiment,closure,balance,survival,risk o all')
   }
@@ -97,6 +99,7 @@ pipeline {
     }
 
     stage('Deploy') {
+      when { expression { !params.VALIDATE_ONLY } }
       steps {
         sh '$COMPOSE up -d --no-deps api streaming'
         sh '''
@@ -115,7 +118,7 @@ pipeline {
   }
 
   post {
-    success { echo "LifeMap ${env.GIT_COMMIT} desplegado." }
+    success { echo "LifeMap ${env.GIT_COMMIT}: pipeline aprobado (VALIDATE_ONLY=${params.VALIDATE_ONLY})." }
     failure { echo 'Build fallido. Consultar la etapa: no se promueve si fallan pruebas; verificar /health si falló Deploy.' }
   }
 }
