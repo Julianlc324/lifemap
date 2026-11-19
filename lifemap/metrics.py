@@ -1,5 +1,6 @@
 """Fórmulas del proyecto. Funciones puras: se prueban en Jenkins (tests/unit)."""
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+import calendar
 
 
 def closure_rate(closures, business_days):
@@ -64,7 +65,7 @@ def business_life(first_review, last_review, is_open, n_reviews, obs_start):
     }
 
 
-def risk_label(is_open, last_review, cutoff, horizon_days=365):
+def risk_label(is_open, last_review, cutoff, horizon_days=None):
     """Etiqueta del modelo de riesgo (Entrega 2).
 
     1 -> cerrado y su última reseña cae en (T, T + 12 meses].
@@ -74,7 +75,23 @@ def risk_label(is_open, last_review, cutoff, horizon_days=365):
     last, t = _as_date(last_review), _as_date(cutoff)
     if last <= t:
         return None
-    horizon = date.fromordinal(t.toordinal() + horizon_days)
+    horizon = (date.fromordinal(t.toordinal() + horizon_days) if horizon_days is not None
+               else t.replace(year=t.year + 1, day=min(t.day, calendar.monthrange(t.year + 1, t.month)[1])))
     if int(is_open) == 0 and last <= horizon:
         return 1
     return 0
+
+
+def cutoff_exclusive(cutoff):
+    """Primer instante UTC posterior al día T (datetime naive para Mongo/Spark UTC)."""
+    return datetime.combine(_as_date(cutoff) + timedelta(days=1), datetime.min.time())
+
+
+def survival_observation(first_review, last_review, event, dataset_cutoff, obs_start):
+    first, last = _as_date(first_review), _as_date(last_review)
+    cutoff, obs = _as_date(dataset_cutoff), _as_date(obs_start)
+    if not first <= last <= cutoff:
+        raise ValueError("Fechas de observación inconsistentes")
+    end = last if event else cutoff
+    return {"duration": (end - first).days + 1,
+            "entry": max(0, (obs - first).days), "in_window": end >= obs}

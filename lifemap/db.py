@@ -29,7 +29,7 @@ def ensure_indexes(db=None):
     db.cell_sentiment.create_index([("geometry", GEOSPHERE)])
     db.zones.create_index([("geometry", GEOSPHERE)])
     # Entrega 2
-    db.reviews_stream.create_index([("business_id", ASCENDING)])
+    db.reviews_stream.create_index([("business_id", ASCENDING), ("date", ASCENDING)])
     db.reviews_stream.create_index([("processed_at", DESCENDING)])
     db.windows.create_index([("geometry", GEOSPHERE)])
     db.windows.create_index([("geohash", ASCENDING), ("window_start", ASCENDING)], unique=True)
