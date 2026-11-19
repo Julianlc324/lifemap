@@ -179,13 +179,18 @@ def clean_reviews(business):
     after_dup = int(kept.shape[0].compute())
     report = sequential_report("review", REVIEW_RULES, total, counts.to_dict(), before_dup - after_dup)
 
+    if config.MAX_REVIEWS and config.MAX_REVIEWS < 1_000_000:
+        raise ValueError("MAX_REVIEWS debe ser 0 o al menos 1.000.000")
     if config.MAX_REVIEWS and after_dup > config.MAX_REVIEWS:
         frac = config.MAX_REVIEWS / after_dup
-        kept = kept.sample(frac=frac, random_state=42)
+        kept = kept.sample(frac=frac, random_state=42).persist()
+        actual = int(kept.shape[0].compute())
+        if actual < 1_000_000:
+            raise ValueError("La muestra real no llega a 1.000.000; aumente MAX_REVIEWS")
         report.append({"dataset": "review", "regla": "muestra_aleatoria",
                        "justificacion": f"MAX_REVIEWS={config.MAX_REVIEWS} (la guía permite >= 1.000.000)",
-                       "antes": after_dup, "eliminados": after_dup - int(after_dup * frac),
-                       "despues": int(after_dup * frac)})
+                       "antes": after_dup, "eliminados": after_dup - actual,
+                       "despues": actual})
 
     # Unión reseña–negocio: cada reseña hereda ubicación (celda) y categoría de su negocio
     lookup = business[["business_id", "geohash", "main_category", "city"]]
@@ -216,6 +221,10 @@ def _insert_partition(pdf, uri, dbname, collection):
             res = coll.insert_many(docs[i:i + BATCH], ordered=False)
             inserted += len(res.inserted_ids)
         except BulkWriteError as exc:  # duplicados si se reintenta una partición
+            if exc.details.get("writeConcernErrors") or any(
+                e.get("code") != 11000 for e in exc.details.get("writeErrors", [])
+            ):
+                raise
             inserted += exc.details.get("nInserted", 0)
     client.close()
     return pd.Series([inserted])
