@@ -102,7 +102,9 @@ pipeline {
         sh '''
           for i in $(seq 1 30); do
             if $COMPOSE exec -T api python3 bin/check_health.py; then
-              echo "Desplegado $GIT_COMMIT"; exit 0
+              echo "Desplegado $GIT_COMMIT"
+              printf '%s\n' "IMAGE_TAG=$IMAGE_TAG" "GIT_COMMIT=$GIT_COMMIT" "MONGO_DB=$MONGO_DB" "MODELS_DIR=$MODELS_DIR" "DATA_DIR=$DATA_DIR" "CHECKPOINT_DIR=$CHECKPOINT_DIR" > /var/jenkins_home/lifemap-active.env
+              exit 0
             fi
             sleep 5
           done

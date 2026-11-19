@@ -34,7 +34,7 @@ GitHub (merge a main) ─► Jenkins (pollSCM 2 min) ─► build ─► pytest 
 | `kafka` (+ `kafka-init`) | Broker KRaft, topic `reviews` con 3 particiones |
 | `ingest`, `batch` | Pipeline de una sola ejecución (cada paso deja marca en `meta` y no se repite) |
 | `api` | Flask + gunicorn, publicado en el puerto 80 |
-| `streaming` | Job de Structured Streaming (Entrega 2; mientras su código no exista, espera sin reiniciarse) |
+| `streaming` | Job de Structured Streaming con modelos versionados, idempotencia y checkpoint v2 |
 | `jenkins` | CI/CD con Configuration as Code; usa el socket de Docker del servidor |
 | `ngrok` (perfil `tunnel`, opcional) | Alternativa para publicar la API desde un equipo sin IP pública |
 
@@ -123,7 +123,7 @@ Solo publica reseñas posteriores a `T = CUTOFF_T`, en orden de fecha, con clave
 | Repetir un paso | `FORCE_STEPS=closure docker compose run --rm batch` |
 | Pruebas locales | `docker compose --profile test run --rm tests -q tests/unit` |
 | UIs internas | Spark `:8090`, Dask `:8787`, Jenkins `:8081` (solo red local) |
-| Reiniciar el streaming desde cero | `docker compose stop streaming && docker volume rm lifemap_checkpoints` |
+| Reiniciar el consumidor conservando progreso | `docker compose restart streaming` (usar configuración activa, ver abajo) |
 
 ## Documentación
 
@@ -134,3 +134,23 @@ Solo publica reseñas posteriores a `T = CUTOFF_T`, en orden de fecha, con clave
 - [`docs/sustentacion.md`](docs/sustentacion.md): preguntas probables y dónde está cada cosa en el código.
 
 Código propio del equipo. Bibliotecas de terceros: Apache Spark, Dask, Apache Kafka, MongoDB y su conector para Spark, Flask, lifelines, kafka-python, Leaflet (mapa de la página de inicio).
+
+
+## Integración de E2 (candidato en revisión)
+
+Los módulos de E2 están incorporados en las ramas de trabajo, con correcciones y pruebas de humo aisladas. Estado y evidencia: [docs/integracion_e2.md](docs/integracion_e2.md). Esto no implica que el candidato esté desplegado ni que Power BI esté terminado.
+
+Jenkins prepara una base y directorios de datos/modelos exclusivos por build, con imágenes etiquetadas por commit. Detiene brevemente el consumidor para copiar un snapshot coherente y lo reinicia al terminar la copia, incluso si esta falla. Las pruebas no publican en el topic productivo. Un snapshot de streaming anterior al protocolo v2 con historial detiene la migración: requiere revisar recuperación de ese historial antes de proceder.
+
+Después de una promoción exitosa, para ejecutar productor/jobs manuales contra la versión activa desde el checkout del servidor:
+
+```bash
+docker exec lifemap-jenkins-1 cat /var/jenkins_home/lifemap-active.env > .deployment.env
+docker compose --env-file .env --env-file .deployment.env run --rm producer --days-per-tick 30 --tick-seconds 10
+```
+
+El archivo contiene únicamente nombres/rutas de despliegue y commit, nunca credenciales. Usar las mismas opciones `--env-file` para operaciones posteriores a la promoción. Antes de la primera promoción E2 no existe ese archivo; se mantienen los comandos anteriores del README.
+
+No borrar checkpoints para reiniciar una demo: puede repetir ventanas o perder el progreso. Las pruebas usan directorios y topics temporales y eliminan únicamente sus recursos al finalizar.
+
+Power BI: consultas listas en [powerbi/queries](powerbi/queries); instrucciones y estado pendiente en [powerbi/README.md](powerbi/README.md). Se requiere el dashboard real para E2.8.

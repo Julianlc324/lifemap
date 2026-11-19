@@ -1,5 +1,4 @@
 import pytest
-pytest.importorskip('lifelines')
 import numpy as np
 import pandas as pd
 from jobs.survival import at_risk, fit_curve

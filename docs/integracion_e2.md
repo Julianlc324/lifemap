@@ -23,7 +23,8 @@ La integración incluye productor Kafka, riesgo de cierre, Structured Streaming 
 2. Se conservó el reporte real anterior a las correcciones en `evidencias/resultados-vm-2026-11-19.md`. Sus curvas y benchmark pertenecen a la implementación anterior; no presentarlos como resultados corregidos.
 3. Pruebas en la VM, contenedor temporal `lifemap-candidate-smoke`, código montado de solo lectura, modelos reales también de solo lectura: **47 passed in 37.69s**. Incluye cien reseñas reales posteriores a T, repetición de las cien sin duplicación, modelos versionados y avance de watermark en topic de prueba para verificar ventanas de treinta días y geometrías.
 4. Recalcular KM en base temporal produjo **316 curvas, 83 suficientes**. El benchmark corregido se ejecutó aparte sobre los 13.883 negocios; recuperar JSON al finalizar para documentar todos los tiempos. Modo de validación utilizado: Spark `local[2]` dentro de la VM, no confundirlo con benchmark del clúster final.
-5. Compose valida su configuración. La validación remota del Jenkinsfile y el build completo están pendientes de recuperar conectividad con la VM.
+5. Después de ampliar las pruebas unitarias de parámetros del productor y hotspots: **52 pruebas locales aprobadas, ninguna omitida**. Los últimos cambios de heartbeat y configuración de despliegue requieren repetir el humo remoto cuando vuelva la conexión.
+6. Compose valida su configuración. La validación remota del Jenkinsfile y el build completo están pendientes de recuperar conectividad con la VM.
 
 ## Pendientes para declarar ambas entregas completas
 

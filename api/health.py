@@ -1,5 +1,6 @@
 """Estado de cada servicio para /health (MongoDB, Spark, Dask, Kafka + retraso del consumidor, API)."""
 import time
+from datetime import datetime, timezone
 
 import requests
 
@@ -44,9 +45,19 @@ def dask():
         workers = len(ident.get("workers", {}))
     except Exception:  # noqa: BLE001
         pass
-    status = "ok" if workers is None or workers >= 2 else "degraded"
+    status = "ok" if workers is not None and workers >= 2 else "degraded"
     return {"status": status, "scheduler": r.text.strip(), "workers": workers}
 
+
+
+def consumer_state(stream, now=None):
+    heartbeat = stream.get("heartbeat_at")
+    if heartbeat and heartbeat.tzinfo is None:
+        heartbeat = heartbeat.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    age = (now - heartbeat).total_seconds() if heartbeat else None
+    running = bool(stream.get("active") and age is not None and 0 <= age < 120)
+    return heartbeat, running
 
 def kafka():
     from kafka import KafkaConsumer, TopicPartition
@@ -62,7 +73,10 @@ def kafka():
     progress = db.get_db().stream_progress.find_one({"_id": config.KAFKA_TOPIC}) or {}
     committed = progress.get("offsets", {})
     lag = {str(tp.partition): max(0, end[tp] - int(committed.get(str(tp.partition), 0))) for tp in tps}
-    return {"status": "ok" if len(tps) >= 3 else "degraded", "topic": config.KAFKA_TOPIC,
+    stream = db.get_meta("stream_status")
+    heartbeat, running = consumer_state(stream)
+    return {"status": "ok" if len(tps) >= 3 and running else "degraded", "topic": config.KAFKA_TOPIC,
+            "consumer_status": "ok" if running else "down", "consumer_heartbeat": heartbeat,
             "partitions": len(tps), "end_offsets": {str(tp.partition): end[tp] for tp in tps},
             "consumer_lag": sum(lag.values()), "consumer_lag_by_partition": lag,
             "last_batch_at": progress.get("updated_at"), "stream_model": progress.get("model_versions")}

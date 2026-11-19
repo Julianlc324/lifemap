@@ -1,5 +1,4 @@
 import pytest
-pytest.importorskip('kafka')
 from datetime import datetime
 from streaming.producer import parse_args, to_message
 

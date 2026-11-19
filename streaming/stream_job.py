@@ -229,7 +229,19 @@ def main():
     q2 = (windows.writeStream.queryName("windows").outputMode("append").foreachBatch(process_windows)
           .option("checkpointLocation", f"{CHECKPOINTS}/windows").trigger(processingTime="5 seconds").start())
     print("Streaming iniciado:", q1.id, q2.id)
-    spark.streams.awaitAnyTermination()
+    try:
+        while True:
+            for query in (q1, q2):
+                if not query.isActive:
+                    raise RuntimeError(f"Consulta detenida: {query.name}: {query.exception()}")
+            db.set_meta("stream_status", heartbeat_at=datetime.now(timezone.utc), active=True,
+                        active_queries=[q1.name, q2.name])
+            spark.streams.awaitAnyTermination(10)
+    finally:
+        db.set_meta("stream_status", active=False)
+        for query in (q1, q2):
+            query.stop()
+        spark.stop()
 
 
 if __name__ == "__main__":
