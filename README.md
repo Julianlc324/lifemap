@@ -72,12 +72,13 @@ Configuración no secreta: `config/lifemap.env` (área, familia, T, umbrales). S
 
 ## Pipeline de Jenkins
 
-`Checkout → Build images → Unit tests → Start services → Data pipeline → API tests (candidate) → Streaming tests → Deploy`
+`Checkout → Build images → Unit tests → Start services → Prepare isolated candidate → Data pipeline → API tests (candidate) → Streaming tests → Deploy`
 
 - **Unit tests** incluye `tests/unit/test_metrics.py`, que verifica la fórmula de la tasa de cierre.
 - **API tests** levanta `api-test` con la imagen nueva y ejecuta `tests/integration` contra ella; la API pública solo se reemplaza si todo pasa.
 - **Streaming tests**: prueba de humo (publica 100 mensajes y verifica que aparecen clasificados en MongoDB) y prueba de que el streaming cargó el modelo versionado.
-- **Deploy** reemplaza `api` y comprueba que `/ping` reporta el commit desplegado.
+- **Deploy** reemplaza `api` y `streaming`; comprueba `/health`, el commit y la actividad reciente del consumidor. Con `VALIDATE_ONLY=true` esta etapa se omite.
+- **Recursos:** el batch solicita ejecutores de 1 GiB para coexistir con streaming en los dos workers de 3 GiB. Una solicitud de 2 GiB puede quedar esperando memoria aunque haya CPU libre.
 - Repetir pasos del pipeline de datos: *Build with Parameters* → `FORCE_STEPS=sentiment,closure` (o `all`).
 - Demostración del bloqueo con un build fallido: ver [`docs/demo_build_fallido.md`](docs/demo_build_fallido.md).
 
@@ -130,6 +131,7 @@ Solo publica reseñas posteriores a `T = CUTOFF_T`, en orden de fecha, con clave
 - [`docs/decisiones.md`](docs/decisiones.md): definiciones, umbrales y su justificación (mínimo de días-negocio, T, ventana observada, hotspots, umbral de riesgo).
 - [`docs/trabajo_en_equipo.md`](docs/trabajo_en_equipo.md): ramas, responsables y flujo de pull requests.
 - [`docs/informe_entrega1.md`](docs/informe_entrega1.md) y [`docs/informe_entrega2.md`](docs/informe_entrega2.md): plantillas de informe.
+- Informes preliminares con evidencia: [Entrega 1, cuatro páginas](output/pdf/lifemap_entrega1_validacion.pdf) y [Entrega 2, seis páginas](output/pdf/lifemap_entrega2_validacion.pdf). Reproducción: `python bin/build_reports.py`, con ReportLab instalado. Documentan los pendientes; aún no equivalen al cierre de ambas entregas.
 - [`docs/areas.md`](docs/areas.md): otras áreas metropolitanas si hay que cambiar de ciudad.
 - [`docs/sustentacion.md`](docs/sustentacion.md): preguntas probables y dónde está cada cosa en el código.
 

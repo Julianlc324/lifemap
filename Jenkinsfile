@@ -63,8 +63,10 @@ pipeline {
       steps {
         sh """
           was_running=\$(docker inspect -f '{{.State.Running}}' lifemap-streaming-1 2>/dev/null || true)
-          if [ "\$was_running" = true ]; then docker stop -t 60 lifemap-streaming-1; fi
           trap 'if [ "\$was_running" = true ]; then docker start lifemap-streaming-1; fi' EXIT
+          trap 'exit 143' TERM
+          trap 'exit 130' INT
+          if [ "\$was_running" = true ]; then docker stop -t 60 lifemap-streaming-1; fi
           \$COMPOSE run --rm --no-deps -T -e SOURCE_DATABASE -e SOURCE_MODELS_DIR -e SOURCE_DATA_DIR -e SOURCE_CHECKPOINT_DIR jobs python3 bin/prepare_candidate.py
         """
       }
@@ -77,7 +79,7 @@ pipeline {
                                           passwordVariable: 'KAGGLE_KEY')]) {
           sh '$COMPOSE run --rm --no-deps -T -e KAGGLE_USERNAME -e KAGGLE_KEY -e FORCE_STEPS="$FORCE_STEPS" ingest'
         }
-        sh '$COMPOSE run --rm --no-deps -T -e FORCE_STEPS="$FORCE_STEPS" -e SPARK_EXECUTOR_MEMORY=1g batch'
+        sh '$COMPOSE run --name "$MONGO_DB-batch" --rm --no-deps -T -e FORCE_STEPS="$FORCE_STEPS" -e SPARK_EXECUTOR_MEMORY=1g batch'
       }
     }
 
@@ -118,6 +120,14 @@ pipeline {
   }
 
   post {
+    always {
+      // Solo el batch exclusivo de este build: nunca retirar servicios desplegados.
+      sh '''
+        case "$MONGO_DB" in
+          lifemap_candidate_*) docker rm -f "$MONGO_DB-batch" >/dev/null 2>&1 || true ;;
+        esac
+      '''
+    }
     success { echo "LifeMap ${env.GIT_COMMIT}: pipeline aprobado (VALIDATE_ONLY=${params.VALIDATE_ONLY})." }
     failure { echo 'Build fallido. Consultar la etapa: no se promueve si fallan pruebas; verificar /health si falló Deploy.' }
   }
