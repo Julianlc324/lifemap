@@ -22,7 +22,7 @@ La integración incluye productor Kafka, riesgo de cierre, Structured Streaming 
 1. La URL devolvió todos los servicios `ok`, commit `ab0ffb2`, 13.883 negocios y 1.166.192 reseñas. Véase `evidencias/health-2026-11-19.json`.
 2. Se conservó el reporte real anterior a las correcciones en `evidencias/resultados-vm-2026-11-19.md`. Sus curvas y benchmark pertenecen a la implementación anterior; no presentarlos como resultados corregidos.
 3. Pruebas en la VM, contenedor temporal `lifemap-candidate-smoke`, código montado de solo lectura, modelos reales también de solo lectura: **47 passed in 37.69s**. Incluye cien reseñas reales posteriores a T, repetición de las cien sin duplicación, modelos versionados y avance de watermark en topic de prueba para verificar ventanas de treinta días y geometrías.
-4. Recalcular KM en base temporal produjo **316 curvas, 83 suficientes**. El benchmark corregido se ejecutó aparte sobre los 13.883 negocios; JSON guardados en `evidencias/validacion-2026-11-19/`: ocho configuraciones y 24 mediciones. Modo de validación utilizado: Spark `local[2]` dentro de la VM, no confundirlo con benchmark del clúster final.
+4. Recalcular KM en base temporal produjo **316 curvas, 83 suficientes**. La primera validación y sus curvas están en `evidencias/validacion-2026-11-19/` (Spark `local[2]`). El build candidato 2 repitió supervivencia y el benchmark en maestro y dos workers: ocho configuraciones y 24 mediciones sobre 13.883 negocios, en `evidencias/jenkins-candidate-2-2026-11-19/`. Cuatro cores declarados para batch, ejecutores de 1 GiB y consumidor activo; VM de cuatro vCPU compartidas.
 5. Después de ampliar las pruebas unitarias de parámetros del productor y hotspots: **52 pruebas locales aprobadas, ninguna omitida**. La repetición remota, incluidos heartbeat y humo, terminó con **55 passed in 59.14s**.
 6. Compose valida su configuración. El validador remoto de Jenkins aprobó la sintaxis. El build candidato 1 fue cancelado por espera de recursos Spark; el build 2 valida ejecutores batch de 1 GiB para coexistir con el consumidor. Su resultado completo está pendiente.
 7. Informes preliminares en `output/pdf/`: E1 de cuatro páginas y E2 de seis. Se generan con `python bin/build_reports.py` (requiere ReportLab) a partir de evidencia versionada y figuras en `docs/figuras/`. Registran explícitamente las verificaciones y entregables aún pendientes.
@@ -30,7 +30,7 @@ La integración incluye productor Kafka, riesgo de cierre, Structured Streaming 
 ## Pendientes para declarar ambas entregas completas
 
 - Validar el build Jenkins completo sobre este candidato, luego PR con revisión cruzada real y promoción a main. Conservar build fallido y hash público posterior. No se ha desplegado este código.
-- Ejecutar el benchmark en el clúster final y exportar sus mediciones. Recuperar resultados de las pruebas aisladas.
+- Conservar el resultado completo de Jenkins junto a las mediciones ya exportadas del clúster.
 - Revisar y migrar checkpoints si ya hay datos en streaming antiguo; el pipeline detiene la promoción en ese caso. Tras una actualización de sentimiento, regenerar riesgo y sus estados de T.
 - Completar el dashboard Power BI real: hay cinco consultas `.pq` listas, pero no un `.pbix` ni reporte publicado verificado. Requiere Power BI habilitado por el equipo.
 - Preparar informes paginados E1 <=6 y E2 <=10 páginas con los resultados definitivos, curvas, citas de reutilización y capturas de la demo. Las plantillas no equivalen a informes terminados.

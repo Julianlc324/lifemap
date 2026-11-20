@@ -15,4 +15,4 @@ En Power BI Desktop, crear primero la consulta/parámetro `BaseUrl` usando `quer
 
 Durante la demo, usar **Actualizar** con la API pública y productor activo. Las ventanas se publican al cerrar por watermark; al acelerar el histórico pueden observarse nuevas ventanas en segundos reales. El conector Web usa importación: esta solución no promete actualización automática de página por DirectQuery. Guardar el dashboard como `lifemap.pbix` y conservar dos capturas en momentos diferentes.
 
-Esta tarea necesita un entorno Power BI disponible. El equipo confirmó que aún no tiene ninguno configurado.
+El equipo dispone de un Mac. Power BI Service permite crear modelos semánticos con Power Query y construir informes desde el navegador: [documentación de Microsoft](https://learn.microsoft.com/en-us/power-bi/transform-model/service-edit-data-models). Se usará la cuenta institucional IUE; su acceso y las opciones habilitadas por el administrador aún deben comprobarse. No es obligatorio instalar Desktop para probar esta vía.
